@@ -1,4 +1,4 @@
-
+# here is a Kalman filter python code for Atom IDE
 def predict(mu1, var1, mu2, var2):
     ''' after motion we predict the new location'''
     mu3 = mu1 + mu2
