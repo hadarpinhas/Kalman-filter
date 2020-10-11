@@ -1,2 +1,8 @@
 download xlrd for excel files:
 !conda install -c anaconda xlrd --yes
+
+Waffle
+PyWaffle
+
+wordcloud
+!conda install -c conda-forge wordcloud==1.4.1 --yes
