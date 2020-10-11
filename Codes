@@ -1,0 +1,2 @@
+download xlrd for excel files:
+!conda install -c anaconda xlrd --yes
