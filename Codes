@@ -6,3 +6,6 @@ PyWaffle
 
 wordcloud
 !conda install -c conda-forge wordcloud==1.4.1 --yes
+
+seaborn
+!conda install -c anaconda seaborn --yes
