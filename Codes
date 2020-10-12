@@ -9,3 +9,7 @@ wordcloud
 
 seaborn
 !conda install -c anaconda seaborn --yes
+
+Folium
+!conda install -c conda-forge folium=0.5.0 --yes
+import folium
