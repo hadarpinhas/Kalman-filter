@@ -2,17 +2,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 import json
 
-class ExtendedKalmanFilter:
+class UnscentedKalmanFilter:
     def __init__(self, dt):
         self.dt = dt
 
-    def f(self, x, u):
-        # State transition function for non-linear system (simplified for spiral motion)
+    def f(self, x):
+        # State transition function for non-linear system
         x_new = np.array([
-            x[0] + x[2] * self.dt,  # x position
-            x[1] + x[3] * self.dt,  # y position
-            x[2] + u[0] * self.dt,  # x velocity
-            x[3] + u[1] * self.dt   # y velocity
+            x[0] + x[2] * self.dt,  # latitude
+            x[1] + x[3] * self.dt,  # longitude
+            x[2],                   # latitude velocity
+            x[3]                    # longitude velocity
         ])
         return x_new
 
@@ -20,41 +20,51 @@ class ExtendedKalmanFilter:
         # Measurement function for non-linear system
         return x
 
-    def jacobian_F(self, x, u):
-        # Jacobian of the state transition function
-        F = np.array([
-            [1, 0, self.dt, 0],
-            [0, 1, 0, self.dt],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]
-        ])
-        return F
+    def sigma_points(self, x, P, kappa):
+        n = x.shape[0]
+        sigma_points = np.zeros((2 * n + 1, n))
+        sigma_points[0] = x
+        sqrt_P = np.linalg.cholesky((n + kappa) * P)
+        for i in range(n):
+            sigma_points[i + 1] = x + sqrt_P[i]
+            sigma_points[n + i + 1] = x - sqrt_P[i]
+        return sigma_points
 
-    def jacobian_H(self, x):
-        # Jacobian of the measurement function
-        H = np.eye(4)
-        return H
+    def unscented_transform(self, sigma_points, Wm, Wc, noise_cov):
+        x = np.dot(Wm, sigma_points)
+        y = sigma_points - x
+        P = np.dot(Wc * y.T, y) + noise_cov
+        return x, P
 
-    def run(self, x, P, U, Y) -> np.array:
-        xKalman = []
+    def run(self, x, P, U, Y, alpha=1e-3, beta=2, kappa=0):
+        n = x.shape[0]
+        lamb = alpha**2 * (n + kappa) - n
+        Wm = np.full(2 * n + 1, 0.5 / (n + lamb))
+        Wm[0] = lamb / (n + lamb)
+        Wc = Wm.copy()
+        Wc[0] = Wm[0] + 1 - alpha**2 + beta
+
+        xUKF = []
         XkList = []
         for k in range(1, Y.shape[0]):
             ####################### Prediction #####################################
-            x = self.f(x, U[k-1])
-            F = self.jacobian_F(x, U[k-1])
-            P = F @ P @ F.T + SigK
+            sigma_points = self.sigma_points(x, P, lamb)
+            sigma_points_pred = np.array([self.f(sp) for sp in sigma_points])
+            x, P = self.unscented_transform(sigma_points_pred, Wm, Wc, SigK)
 
             ######################## Correction ####################################
-            H = self.jacobian_H(x)
-            Yk = self.h(x)
-            K = P @ H.T @ np.linalg.inv(H @ P @ H.T + SigV)
-            x = x + K @ (Y[k] - Yk)
-            P = (np.eye(len(P)) - K @ H) @ P
+            sigma_points = self.sigma_points(x, P, lamb)
+            sigma_points_meas = np.array([self.h(sp) for sp in sigma_points])
+            y, Pyy = self.unscented_transform(sigma_points_meas, Wm, Wc, SigV)
+            Pxy = np.dot(Wc * (sigma_points_pred - x).T, sigma_points_meas - y)
+            K = np.dot(Pxy, np.linalg.inv(Pyy))
+            x += np.dot(K, (Y[k] - y))
+            P -= np.dot(K, Pyy).dot(K.T)
 
-            XkList.append(Yk[:2])  # Store position only
-            xKalman.append(x[:2])  # Store position only
+            XkList.append(y[:2])  # Store position only
+            xUKF.append(x[:2])    # Store position only
 
-        return XkList, xKalman
+        return XkList, xUKF
 
 def load_data_from_json(file_path):
     with open(file_path, 'r') as f:
@@ -89,19 +99,19 @@ if __name__ == "__main__":
                   [0, 0, 25, 0],
                   [0, 0, 0, 25]])
 
-    ekf = ExtendedKalmanFilter(dt)
-    XkList, xKalman = ekf.run(initial_x_v, P, U, measurements)
+    ukf = UnscentedKalmanFilter(dt)
+    XkList, xUKF = ukf.run(initial_x_v, P, U, measurements)
 
-    # Plotting y position as a function of x position
-    posList_x = measurements[:, 0]
-    posList_y = measurements[:, 1]
+    # Plotting lat as a function of lon
+    latList = measurements[:, 0]
+    lonList = measurements[:, 1]
 
     plt.figure(figsize=(8, 8))
-    plt.scatter(posList_x, posList_y, label='Measured Position')
+    plt.scatter(latList, lonList, label='Measured Position')
     plt.scatter([p[0] for p in XkList], [p[1] for p in XkList], label='Estimated Position')
-    plt.plot([p[0] for p in xKalman], [p[1] for p in xKalman], '--r', label='Kalman Filter Path')
-    plt.xlabel('x position [m]')
-    plt.ylabel('y position [m]')
+    plt.plot([p[0] for p in xUKF], [p[1] for p in xUKF], '--r', label='Kalman Filter Path')
+    plt.xlabel('Latitude')
+    plt.ylabel('Longitude')
     plt.legend()
     plt.title('2D Position Plot - The Unscented Kalman Filter')
     plt.grid(True)
